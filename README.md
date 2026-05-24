@@ -124,6 +124,46 @@ sudo umount /mnt
 
 Most machines require Secure Boot to be disabled unless you sign the EFI binary.
 
+## Firmware benchmark result
+
+On the same mixed DDR4 host, EFIRAM reported these firmware-time write results
+in `linear` mode with reports every 4 passes:
+
+| Region | Passes | Bytes written per report | Time | Throughput |
+| --- | ---: | ---: | ---: | ---: |
+| 4-7 GiB | 4 | 12,288 MiB | 424 ms | ~28,970 MiB/s |
+| 9-12 GiB | 4 | 12,288 MiB | 803 ms | ~15,287 MiB/s |
+
+## Userspace comparison result
+
+For comparison, a Linux userspace `sysbench memory` write test on a mixed DDR4
+system produced the following results. The host had one 4 GiB Kingston DDR4-2133
+DIMM in `DIMM_A2` and one 8 GiB Kingston DDR4-2667 DIMM in `DIMM_B2`, both
+configured at 2133 MT/s.
+
+Command:
+
+```sh
+sysbench memory \
+  --memory-block-size=1G \
+  --memory-total-size=100G \
+  --memory-oper=write \
+  --threads=1 \
+  run
+```
+
+| Run | Initial `free -h` state | DMA32 free pages | Normal free pages | Throughput | Avg latency |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1 | 10 GiB free, 1.0 GiB used | 548,970 | 2,106,184 | 9,988.80 MiB/s | 102.49 ms |
+| 2 | 6.0 GiB free, 5.2 GiB used | 548,970 | 1,014,698 | 7,349.64 MiB/s | 139.30 ms |
+| 3 | 1.9 GiB free, 9.3 GiB used | 457,384 | 30,743 | 12,241.17 MiB/s | 83.63 ms |
+
+The changing result is consistent with Linux allocation policy: normal userspace
+allocations prefer the `Normal` zone over `DMA32`, so repeated runs under
+increasing memory pressure can move the benchmark into different physical memory
+regions. EFIRAM avoids that policy layer by writing selected physical address
+windows directly at firmware boot time.
+
 ## Notes
 
 This is a destructive RAM write test for firmware boot time. It does not run
