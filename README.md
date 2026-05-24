@@ -1,6 +1,9 @@
 # EFIRAM
 
-Small x86_64 UEFI application that measures write bandwidth in two physical
+Small **Vibecoded** x86_64 UEFI and BIOS (? i don't know what the correct term is, but something that is compatible with mainboards that don't support efi) application produced with GPT 5.5.
+I have not investigated the Code itself beyond skimming it. I would prefer handwritten code by someone who knows what they're doing in the future though (maybe even by myself).
+
+This measures write bandwidth in two physical
 address windows:
 
 - `1 GiB` up to, but not including, `3 GiB`
