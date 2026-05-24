@@ -64,6 +64,19 @@ The EFI binary is written to:
 build/BOOTX64.EFI
 ```
 
+To build bootable ISO images:
+
+```sh
+nix develop -c make isos
+```
+
+That creates:
+
+```text
+build/efiram-bios.iso
+build/efiram-uefi.iso
+```
+
 To create the standard removable-media directory layout:
 
 ```sh

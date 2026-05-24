@@ -8,9 +8,15 @@ BIOS_STAGE2_SECTORS ?= 48
 EFI_APP := $(BUILD_DIR)/BOOTX64.EFI
 USB_APP := $(DIST_DIR)/EFI/BOOT/BOOTX64.EFI
 BIOS_BOOT := $(BUILD_DIR)/bios-boot.bin
+BIOS_ISO_BOOT := $(BUILD_DIR)/bios-isoboot.bin
 BIOS_STAGE2 := $(BUILD_DIR)/bios-stage2.bin
 BIOS_STAGE2_PAD := $(BUILD_DIR)/bios-stage2.pad
 BIOS_IMG := $(BUILD_DIR)/efiram-bios.img
+BIOS_ISO_BOOT_IMG := $(BUILD_DIR)/efiram-bios-eltorito.img
+BIOS_ISO := $(BUILD_DIR)/efiram-bios.iso
+UEFI_ESP_IMG := $(BUILD_DIR)/efiram-uefi-esp.img
+UEFI_ISO := $(BUILD_DIR)/efiram-uefi.iso
+BIOS_ISO_BOOT_SECTORS := $$(($(BIOS_STAGE2_SECTORS) + 2))
 
 CFLAGS := \
 	--target=x86_64-unknown-windows \
@@ -40,17 +46,26 @@ LDFLAGS := \
 	-Wl,/timestamp:0 \
 	-Wl,/nodefaultlib
 
-.PHONY: all bios clean usb-tree
+.PHONY: all bios bios-iso clean isos uefi-iso usb-tree
 
 all: $(EFI_APP)
 
 bios: $(BIOS_IMG)
+
+bios-iso: $(BIOS_ISO)
+
+uefi-iso: $(UEFI_ISO)
+
+isos: bios-iso uefi-iso
 
 $(EFI_APP): src/efiram.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $< $(LDFLAGS) -o $@
 
 $(BIOS_BOOT): bios/boot.asm | $(BUILD_DIR)
 	$(NASM) -DSTAGE2_SECTORS=$(BIOS_STAGE2_SECTORS) -f bin $< -o $@
+
+$(BIOS_ISO_BOOT): bios/isoboot.asm | $(BUILD_DIR)
+	$(NASM) -f bin $< -o $@
 
 $(BIOS_STAGE2): bios/stage2.asm | $(BUILD_DIR)
 	$(NASM) -f bin $< -o $@
@@ -62,6 +77,28 @@ $(BIOS_STAGE2_PAD): $(BIOS_STAGE2)
 
 $(BIOS_IMG): $(BIOS_BOOT) $(BIOS_STAGE2_PAD)
 	cat $(BIOS_BOOT) $(BIOS_STAGE2_PAD) > $@
+
+$(BIOS_ISO_BOOT_IMG): $(BIOS_ISO_BOOT) $(BIOS_STAGE2_PAD)
+	cat $(BIOS_ISO_BOOT) /dev/zero | head -c 1024 > $@
+	cat $(BIOS_STAGE2_PAD) >> $@
+
+$(BIOS_ISO): $(BIOS_ISO_BOOT_IMG)
+	xorriso -as mkisofs -R -J -V EFIRAM_BIOS -o $@ \
+		-b $(notdir $(BIOS_ISO_BOOT_IMG)) -no-emul-boot \
+		-boot-load-size $(BIOS_ISO_BOOT_SECTORS) \
+		$(BIOS_ISO_BOOT_IMG)
+
+$(UEFI_ESP_IMG): $(EFI_APP)
+	rm -f $@
+	truncate -s 4M $@
+	mkfs.vfat -F 12 -n EFIRAM $@
+	mmd -i $@ ::/EFI ::/EFI/BOOT
+	mcopy -i $@ $(EFI_APP) ::/EFI/BOOT/BOOTX64.EFI
+
+$(UEFI_ISO): $(UEFI_ESP_IMG)
+	xorriso -as mkisofs -R -J -V EFIRAM_UEFI -o $@ \
+		-e $(notdir $(UEFI_ESP_IMG)) -no-emul-boot \
+		$(UEFI_ESP_IMG)
 
 $(BUILD_DIR):
 	mkdir -p $@

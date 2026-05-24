@@ -8,5 +8,7 @@ pkgs.mkShell {
     nasm
     gnumake
     dosfstools
+    mtools
+    xorriso
   ];
 }

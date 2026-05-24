@@ -1,0 +1,43 @@
+name: Build ISOs
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }} ISO
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: BIOS
+            target: bios-iso
+            artifact: efiram-bios-iso
+            path: build/efiram-bios.iso
+          - name: UEFI
+            target: uefi-iso
+            artifact: efiram-uefi-iso
+            path: build/efiram-uefi.iso
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Build ISO
+        run: nix develop -c make ${{ matrix.target }}
+
+      - name: Upload ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.path }}
+          if-no-files-found: error

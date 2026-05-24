@@ -22,6 +22,8 @@
               nasm
               gnumake
               dosfstools
+              mtools
+              xorriso
             ];
           };
         });
