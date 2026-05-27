@@ -209,6 +209,8 @@ SYSV int plat_poll_key(bench_key *out) {
     switch (k.ScanCode) {
         case 0x01: out->special = BENCH_KEY_UP; break;
         case 0x02: out->special = BENCH_KEY_DOWN; break;
+        case 0x03: out->special = BENCH_KEY_RIGHT; break;
+        case 0x04: out->special = BENCH_KEY_LEFT; break;
         case 0x05: out->special = BENCH_KEY_HOME; break;
         case 0x06: out->special = BENCH_KEY_END; break;
         case 0x17: out->unicode = 0x1b; break;

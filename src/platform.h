@@ -18,8 +18,10 @@ typedef uint64_t size_t;
 #define BENCH_KEY_NONE  0
 #define BENCH_KEY_UP    1
 #define BENCH_KEY_DOWN  2
-#define BENCH_KEY_HOME  3
-#define BENCH_KEY_END   4
+#define BENCH_KEY_LEFT  3
+#define BENCH_KEY_RIGHT 4
+#define BENCH_KEY_HOME  5
+#define BENCH_KEY_END   6
 
 typedef struct {
     uint32_t special;

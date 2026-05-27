@@ -240,8 +240,8 @@ SYSV static void build_windows(void) {
 }
 
 SYSV static void print_controls(void) {
-    put_str("Keys: up/down=prev/next window, home/end=first/last, space=next, ");
-    put_str("r=read, w=write, o=toggle r/w, ,/.=halve/double window-size, ");
+    put_str("Keys: up/down=prev/next window, left/right=-/+1 GiB size, ");
+    put_str("home/end=first/last, space=next, r=read, w=write, o=toggle r/w, ");
     put_str("+/-=passes per print, q/esc=quit\n\n");
 }
 
@@ -330,13 +330,13 @@ SYSV static int apply_key(bench_key key,
         if (*passes_per_report < MAX_PASSES_PER_REPORT) { *passes_per_report *= 2; changed = 1; }
     } else if (ch == '-' || ch == '_') {
         if (*passes_per_report > 1) { *passes_per_report /= 2; changed = 1; }
-    } else if (ch == '.' || ch == '>') {
-        if (window_size_bytes < WINDOW_SIZE_MAX) {
-            changed = try_resize_windows(window_size_bytes * 2ULL, window_index);
+    } else if (key.special == BENCH_KEY_RIGHT) {
+        if (window_size_bytes + GIB <= WINDOW_SIZE_MAX) {
+            changed = try_resize_windows(window_size_bytes + GIB, window_index);
         }
-    } else if (ch == ',' || ch == '<') {
+    } else if (key.special == BENCH_KEY_LEFT) {
         if (window_size_bytes > WINDOW_SIZE_MIN) {
-            changed = try_resize_windows(window_size_bytes / 2ULL, window_index);
+            changed = try_resize_windows(window_size_bytes - GIB, window_index);
         }
     }
 
@@ -355,7 +355,7 @@ SYSV void bench_main(void) {
     put_str("Pattern: ");
     put_hex64(BENCH_PATTERN);
     plat_put_char('\n');
-    put_str("Only fully-usable windows are benchmarked; size is configurable in GiB powers of two.\n");
+    put_str("Only fully-usable windows are benchmarked; size is configurable in 1 GiB chunks.\n");
     print_controls();
 
     build_windows();

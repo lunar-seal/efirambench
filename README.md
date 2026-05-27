@@ -9,7 +9,7 @@ touches ranges that are entirely usable conventional RAM and skips reserved
 firmware memory, MMIO holes, ACPI memory, and the loaded EFI image.
 
 The active window size defaults to `1 GiB` and can be changed at runtime in
-GiB powers of two. Candidate windows are tested on `1 GiB` boundaries, so a
+`1 GiB` chunks. Candidate windows are tested on `1 GiB` boundaries, so a
 `2 GiB` window can cover `4-6 GiB`, `5-7 GiB`, and so on if those spans are
 fully usable.
 
@@ -23,12 +23,12 @@ output does not dominate short runs.
 
 ```text
 up/down  previous/next usable window
+left/right shrink/grow window size by 1 GiB
 home/end first/last usable window
 space    next usable window
 r        read mode
 w        write mode
 o        toggle read/write
-,/.      halve/double window size
 +        double passes per printed report
 -        halve passes per printed report
 q/esc    quit
