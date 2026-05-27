@@ -77,6 +77,7 @@ SYSV int plat_poll_key(bench_key *out) {
         case 0x4e: out->unicode = '+';    return 1;
         case 0x0c: out->unicode = '-';    return 1;
         case 0x4a: out->unicode = '-';    return 1;
+        case 0x23: out->unicode = 'h';    return 1;
         case 0x13: out->unicode = 'r';    return 1;
         case 0x11: out->unicode = 'w';    return 1;
         case 0x18: out->unicode = 'o';    return 1;

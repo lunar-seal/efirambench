@@ -29,6 +29,7 @@ space    next usable window
 r        read mode
 w        write mode
 o        toggle read/write
+h        benchmark all usable 1 GiB chunks and draw a histogram
 +        double passes per printed report
 -        halve passes per printed report
 q/esc    quit
