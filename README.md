@@ -19,6 +19,8 @@ The benchmark uses a single linear access pattern that reads or writes every
 The app prints one report after a configurable number of passes so console
 output does not dominate short runs.
 
+The benchmark starts in `linear-read` mode.
+
 ## Runtime controls
 
 ```text
@@ -29,7 +31,7 @@ space    next usable window
 r        read mode
 w        write mode
 o        toggle read/write
-h        benchmark all usable 1 GiB chunks and draw a histogram
+h        toggle a looping histogram over all usable 1 GiB chunks
 +        double passes per printed report
 -        halve passes per printed report
 q/esc    quit
@@ -39,8 +41,8 @@ The output looks like:
 
 ```text
 Scanned 12 GiB of address space for fully-usable 2 GiB windows; found 5 windows
-Active window: [2/4] 4-6 GiB, size: 2 GiB, mode: linear-write, print every 8 passes
-Report 12: 4-6 GiB, linear-write, 8 passes, wrote 16384 MiB in 912 ms, 17964 MiB/s
+Active window: [2/4] 4-6 GiB, size: 2 GiB, mode: linear-read, print every 8 passes
+Report 12: 4-6 GiB, linear-read, 8 passes, read 16384 MiB in 912 ms, 17964 MiB/s
 ```
 
 ## Build on NixOS
