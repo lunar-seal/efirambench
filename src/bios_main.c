@@ -70,12 +70,16 @@ SYSV int plat_poll_key(bench_key *out) {
         case 0x4f: out->special = BENCH_KEY_END;  return 1;
         case 0x01: out->unicode = 0x1b;   return 1;
         case 0x10: out->unicode = 'q';    return 1;
-        case 0x32: out->unicode = 'm';    return 1;
         case 0x39: out->unicode = ' ';    return 1;
         case 0x0d: out->unicode = '+';    return 1;
         case 0x4e: out->unicode = '+';    return 1;
         case 0x0c: out->unicode = '-';    return 1;
         case 0x4a: out->unicode = '-';    return 1;
+        case 0x33: out->unicode = ',';    return 1;
+        case 0x34: out->unicode = '.';    return 1;
+        case 0x13: out->unicode = 'r';    return 1;
+        case 0x11: out->unicode = 'w';    return 1;
+        case 0x18: out->unicode = 'o';    return 1;
         default:   return 0;
     }
 }

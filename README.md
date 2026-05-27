@@ -3,48 +3,43 @@
 Small **Vibecoded** x86_64 UEFI and BIOS (? i don't know what the correct term is, but something that is compatible with mainboards that don't support efi) application produced with GPT 5.5.
 I have not investigated the Code itself beyond skimming it. I would prefer handwritten code by someone who knows what they're doing in the future though (maybe even by myself).
 
-This measures write bandwidth in two physical
-address windows:
+This measures firmware-time memory bandwidth across fully usable physical
+address windows discovered from the firmware memory map. The benchmark only
+touches ranges that are entirely usable conventional RAM and skips reserved
+firmware memory, MMIO holes, ACPI memory, and the loaded EFI image.
 
-- `1 GiB` up to, but not including, `3 GiB`
-- `4 GiB` up to, but not including, `7 GiB`
-- `9 GiB` up to, but not including, `12 GiB`
+The active window size defaults to `1 GiB` and can be changed at runtime in
+GiB powers of two. Candidate windows are tested on `1 GiB` boundaries, so a
+`2 GiB` window can cover `4-6 GiB`, `5-7 GiB`, and so on if those spans are
+fully usable.
 
-For each pass it writes the fixed 64-bit pattern
-`0xa5a5a5a55a5a5a5a` to ascending addresses in the active window. It starts on
-`1-3 GiB` and can switch regions while running.
-
-Two write modes are available:
-
-- `linear`: writes every 64-bit word in the active conventional RAM chunks.
-- `skip64/write64`: skips 64 bytes, writes 64 bytes, then repeats.
+The benchmark uses a single linear access pattern that reads or writes every
+64-bit word in the active window.
 
 The app prints one report after a configurable number of passes so console
 output does not dominate short runs.
 
-The program reads the UEFI memory map and only writes pages marked
-`EfiConventionalMemory`. Reserved firmware memory, MMIO holes, ACPI memory, and
-the loaded EFI image are skipped.
-
 ## Runtime controls
 
 ```text
-1       select 1-3 GiB
-2       select 4-7 GiB
-3       select 9-12 GiB
-space   toggle region
-r       toggle region
-m       toggle write mode
-+       double passes per printed report
--       halve passes per printed report
-q/esc   quit
+up/down  previous/next usable window
+home/end first/last usable window
+space    next usable window
+r        read mode
+w        write mode
+o        toggle read/write
+,/.      halve/double window size
++        double passes per printed report
+-        halve passes per printed report
+q/esc    quit
 ```
 
 The output looks like:
 
 ```text
-Active region: 1-3 GiB, mode: linear, print every 8 passes
-Report 12: 1-3 GiB, linear, 8 passes, wrote 16384 MiB in 912 ms, 17964 MiB/s
+Scanned 12 GiB of address space for fully-usable 2 GiB windows; found 5 windows
+Active window: [2/4] 4-6 GiB, size: 2 GiB, mode: linear-write, print every 8 passes
+Report 12: 4-6 GiB, linear-write, 8 passes, wrote 16384 MiB in 912 ms, 17964 MiB/s
 ```
 
 ## Build on NixOS

@@ -6,11 +6,16 @@
 #define OP_READ  1
 #define OP_COUNT 2
 
+#define WINDOW_SIZE_MIN     GIB
+#define WINDOW_SIZE_MAX     (MAX_WINDOWS * GIB)
+#define WINDOW_SIZE_DEFAULT GIB
+
 static bench_window windows[MAX_WINDOWS];
 static uint64_t windows_count;
 static uint64_t skipped_total;
 static uint64_t skipped_leading;
 static uint64_t max_gib_scanned;
+static uint64_t window_size_bytes = WINDOW_SIZE_DEFAULT;
 static volatile uint64_t bench_read_sink;
 
 typedef struct {
@@ -27,20 +32,17 @@ typedef struct {
 } write_linear_ctx;
 
 typedef struct {
-    uint64_t pattern;
-    uint64_t start;
-    uint64_t end;
-    uint64_t total;
-} write_skip_ctx;
-
-typedef struct {
     uint64_t scan_end;
 } max_end_ctx;
+
+SYSV static void build_windows(void);
+SYSV static void print_window_summary(void);
 
 SYSV static uint64_t align_up(uint64_t v, uint64_t a)   { return (v + a - 1) & ~(a - 1); }
 SYSV static uint64_t align_down(uint64_t v, uint64_t a) { return v & ~(a - 1); }
 SYSV static uint64_t min_u64(uint64_t a, uint64_t b)    { return a < b ? a : b; }
 SYSV static uint64_t max_u64(uint64_t a, uint64_t b)    { return a > b ? a : b; }
+SYSV static uint64_t window_size_gib(void)              { return window_size_bytes / GIB; }
 
 SYSV static void put_str(const char *s) {
     while (*s) plat_put_char(*s++);
@@ -67,7 +69,12 @@ SYSV static void put_hex64(uint64_t v) {
 SYSV static void put_window_name(uint64_t gib) {
     put_u64(gib);
     plat_put_char('-');
-    put_u64(gib + 1);
+    put_u64(gib + window_size_gib());
+    put_str(" GiB");
+}
+
+SYSV static void put_window_size(void) {
+    put_u64(window_size_gib());
     put_str(" GiB");
 }
 
@@ -153,92 +160,20 @@ SYSV static uint64_t read_window_linear(uint64_t start, uint64_t end, uint64_t p
     bench_read_sink ^= ctx.acc;
     return ctx.total;
 }
-
-SYSV static uint64_t first_skip_address(uint64_t window_start, uint64_t chunk_start) {
-    uint64_t address = align_up(chunk_start, CACHE_LINE);
-    uint64_t phase = (address - window_start) & ((2ULL * CACHE_LINE) - 1ULL);
-    if (phase < CACHE_LINE) address += CACHE_LINE - phase;
-    else if (phase > CACHE_LINE) address += (2ULL * CACHE_LINE) - phase + CACHE_LINE;
-    return address;
-}
-
-SYSV static int write_skip_cb(uint64_t s, uint64_t e, void *ctx_) {
-    write_skip_ctx *ctx = (write_skip_ctx *)ctx_;
-    uint64_t a = max_u64(s, ctx->start);
-    uint64_t b = min_u64(e, ctx->end);
-    if (b <= a) return 0;
-    uint64_t addr = first_skip_address(ctx->start, a);
-    while (addr + CACHE_LINE <= b) {
-        write_qwords(addr, CACHE_LINE / sizeof(uint64_t), ctx->pattern);
-        ctx->total += CACHE_LINE;
-        addr += 2ULL * CACHE_LINE;
-    }
-    return 0;
-}
-
-SYSV static uint64_t write_window_skip(uint64_t start, uint64_t end, uint64_t pattern) {
-    write_skip_ctx ctx = { pattern, start, end, 0 };
-    plat_iter_usable_ranges(write_skip_cb, &ctx);
-    __asm__ __volatile__("sfence" ::: "memory");
-    return ctx.total;
-}
-
-typedef struct {
-    uint64_t start;
-    uint64_t end;
-    uint64_t total;
-    uint64_t acc;
-} read_skip_ctx;
-
-SYSV static int read_skip_cb(uint64_t s, uint64_t e, void *ctx_) {
-    read_skip_ctx *ctx = (read_skip_ctx *)ctx_;
-    uint64_t a = max_u64(s, ctx->start);
-    uint64_t b = min_u64(e, ctx->end);
-    if (b <= a) return 0;
-    uint64_t addr = first_skip_address(ctx->start, a);
-    while (addr + CACHE_LINE <= b) {
-        ctx->acc ^= read_qwords(addr, CACHE_LINE / sizeof(uint64_t));
-        ctx->total += CACHE_LINE;
-        addr += 2ULL * CACHE_LINE;
-    }
-    return 0;
-}
-
-SYSV static uint64_t read_window_skip(uint64_t start, uint64_t end, uint64_t pattern) {
-    (void)pattern;
-    read_skip_ctx ctx = { start, end, 0, 0 };
-    plat_iter_usable_ranges(read_skip_cb, &ctx);
-    bench_read_sink ^= ctx.acc;
-    return ctx.total;
-}
-
 typedef SYSV uint64_t (*op_fn)(uint64_t start, uint64_t end, uint64_t pattern);
 
-typedef struct {
-    const char *base_name;
-    op_fn ops[OP_COUNT];
-} bench_mode;
-
-static const bench_mode modes[] = {
-    {"linear",          {write_window_linear, read_window_linear}},
-    {"skip64/x64",      {write_window_skip,   read_window_skip}},
+static const op_fn ops[OP_COUNT] = {
+    write_window_linear,
+    read_window_linear,
 };
-#define MODE_COUNT (sizeof(modes) / sizeof(modes[0]))
 
 SYSV static const char *op_name(uint64_t op) {
     return (op == OP_READ) ? "read" : "write";
 }
 
-SYSV static void put_mode_label(uint64_t mode_index, uint64_t op) {
-    if (mode_index == 1) {
-        put_str("skip64/");
-        put_str(op_name(op));
-        put_str("64");
-    } else {
-        put_str(modes[mode_index].base_name);
-        plat_put_char('-');
-        put_str(op_name(op));
-    }
+SYSV static void put_mode_label(uint64_t op) {
+    put_str("linear-");
+    put_str(op_name(op));
 }
 
 SYSV static int max_end_cb(uint64_t s, uint64_t e, void *ctx_) {
@@ -248,22 +183,50 @@ SYSV static int max_end_cb(uint64_t s, uint64_t e, void *ctx_) {
     return 0;
 }
 
+SYSV static int try_resize_windows(uint64_t new_size_bytes, uint64_t *window_index) {
+    uint64_t old_size_bytes = window_size_bytes;
+    uint64_t preferred_start = windows_count ? windows[*window_index].start : 0;
+
+    window_size_bytes = new_size_bytes;
+    build_windows();
+    if (windows_count == 0) {
+        window_size_bytes = old_size_bytes;
+        build_windows();
+        if (windows_count > 0 && *window_index >= windows_count) *window_index = windows_count - 1;
+        put_str("Window size ");
+        put_u64(new_size_bytes / GIB);
+        put_str(" GiB has no fully-usable matches.\n");
+        return 0;
+    }
+
+    *window_index = 0;
+    while (*window_index + 1 < windows_count &&
+           windows[*window_index].start < preferred_start) {
+        (*window_index)++;
+    }
+    print_window_summary();
+    return 1;
+}
+
 SYSV static void build_windows(void) {
     max_end_ctx mctx = { 0 };
     plat_iter_usable_ranges(max_end_cb, &mctx);
     uint64_t max_gib = mctx.scan_end / GIB;
     if (max_gib > MAX_WINDOWS) max_gib = MAX_WINDOWS;
     max_gib_scanned = max_gib;
+    uint64_t size_gib = window_size_gib();
 
     windows_count = 0;
     skipped_total = 0;
     skipped_leading = 0;
     int saw_first = 0;
 
-    for (uint64_t g = 0; g < max_gib; g++) {
+    if (size_gib == 0 || size_gib > max_gib) return;
+
+    for (uint64_t g = 0; g + size_gib <= max_gib; g++) {
         uint64_t start = g * GIB;
-        uint64_t end = start + GIB;
-        if (usable_bytes_in_range(start, end) != GIB) {
+        uint64_t end = start + window_size_bytes;
+        if (usable_bytes_in_range(start, end) != window_size_bytes) {
             skipped_total++;
             if (!saw_first) skipped_leading++;
             continue;
@@ -277,36 +240,36 @@ SYSV static void build_windows(void) {
 }
 
 SYSV static void print_controls(void) {
-    put_str("Keys: up/down=+/-1 GiB window, home/end=first/last, space=next, ");
-    put_str("m=toggle mode, r=read, w=write, o=toggle r/w, ");
+    put_str("Keys: up/down=prev/next window, home/end=first/last, space=next, ");
+    put_str("r=read, w=write, o=toggle r/w, ,/.=halve/double window-size, ");
     put_str("+/-=passes per print, q/esc=quit\n\n");
 }
 
 SYSV static void print_window_summary(void) {
     put_str("Scanned ");
     put_u64(max_gib_scanned);
-    put_str(" GiB of address space; ");
+    put_str(" GiB of address space for fully-usable ");
+    put_window_size();
+    put_str(" windows; found ");
     put_u64(windows_count);
-    put_str(" fully-usable 1 GiB window");
+    put_str(" window");
     if (windows_count != 1) plat_put_char('s');
     put_str(" (skipped ");
     put_u64(skipped_total);
-    put_str(" partial/reserved, of which ");
+    put_str(" candidate start");
+    if (skipped_total != 1) plat_put_char('s');
+    put_str(", of which ");
     put_u64(skipped_leading);
     put_str(" were leading).\n");
 
     if (skipped_leading > 0 && windows_count > 0) {
-        put_str("Starting at window [0] = ");
+        put_str("First matching window starts at ");
         put_window_name(windows[0].gib_index);
-        put_str(" because the first ");
+        put_str("; ");
         put_u64(skipped_leading);
-        put_str(" GiB window");
+        put_str(" earlier candidate start");
         if (skipped_leading != 1) plat_put_char('s');
-        put_str(" (0-");
-        put_u64(skipped_leading);
-        put_str(" GiB) ");
-        put_str(skipped_leading == 1 ? "was" : "were");
-        put_str(" not fully usable.\n");
+        put_str(" did not have a full usable span.\n");
     }
 
     if (windows_count > 0) {
@@ -319,16 +282,17 @@ SYSV static void print_window_summary(void) {
     }
 }
 
-SYSV static void print_config(uint64_t window_index, uint64_t mode_index, uint64_t op,
-                              uint64_t passes_per_report) {
+SYSV static void print_config(uint64_t window_index, uint64_t op, uint64_t passes_per_report) {
     put_str("Active window: [");
     put_u64(window_index);
     plat_put_char('/');
     put_u64(windows_count ? windows_count - 1 : 0);
     put_str("] ");
     put_window_name(windows[window_index].gib_index);
+    put_str(", size: ");
+    put_window_size();
     put_str(", mode: ");
-    put_mode_label(mode_index, op);
+    put_mode_label(op);
     put_str(", print every ");
     put_u64(passes_per_report);
     put_str(" pass");
@@ -338,7 +302,6 @@ SYSV static void print_config(uint64_t window_index, uint64_t mode_index, uint64
 
 SYSV static int apply_key(bench_key key,
                           uint64_t *window_index,
-                          uint64_t *mode_index,
                           uint64_t *op,
                           uint64_t *passes_per_report) {
     uint32_t ch = key.unicode;
@@ -356,9 +319,6 @@ SYSV static int apply_key(bench_key key,
         if (windows_count > 0) { *window_index = windows_count - 1; changed = 1; }
     } else if (ch == ' ') {
         if (windows_count > 0) { *window_index = (*window_index + 1) % windows_count; changed = 1; }
-    } else if (ch == 'm' || ch == 'M') {
-        *mode_index = (*mode_index + 1) % MODE_COUNT;
-        changed = 1;
     } else if (ch == 'r' || ch == 'R') {
         if (*op != OP_READ) { *op = OP_READ; changed = 1; }
     } else if (ch == 'w' || ch == 'W') {
@@ -370,15 +330,22 @@ SYSV static int apply_key(bench_key key,
         if (*passes_per_report < MAX_PASSES_PER_REPORT) { *passes_per_report *= 2; changed = 1; }
     } else if (ch == '-' || ch == '_') {
         if (*passes_per_report > 1) { *passes_per_report /= 2; changed = 1; }
+    } else if (ch == '.' || ch == '>') {
+        if (window_size_bytes < WINDOW_SIZE_MAX) {
+            changed = try_resize_windows(window_size_bytes * 2ULL, window_index);
+        }
+    } else if (ch == ',' || ch == '<') {
+        if (window_size_bytes > WINDOW_SIZE_MIN) {
+            changed = try_resize_windows(window_size_bytes / 2ULL, window_index);
+        }
     }
 
-    if (changed) print_config(*window_index, *mode_index, *op, *passes_per_report);
+    if (changed) print_config(*window_index, *op, *passes_per_report);
     return 0;
 }
 
 SYSV void bench_main(void) {
     uint64_t window_index = 0;
-    uint64_t mode_index = 0;
     uint64_t op = OP_WRITE;
     uint64_t passes_per_report = 1;
     uint64_t report = 1;
@@ -388,14 +355,14 @@ SYSV void bench_main(void) {
     put_str("Pattern: ");
     put_hex64(BENCH_PATTERN);
     plat_put_char('\n');
-    put_str("Only fully-usable 1 GiB windows are benchmarked.\n");
+    put_str("Only fully-usable windows are benchmarked; size is configurable in GiB powers of two.\n");
     print_controls();
 
     build_windows();
     print_window_summary();
 
     if (windows_count == 0) {
-        put_str("No fully-usable 1 GiB windows; cannot benchmark.\n");
+        put_str("No fully-usable windows for the current window size; cannot benchmark.\n");
         return;
     }
 
@@ -404,7 +371,7 @@ SYSV void bench_main(void) {
     put_u64(cps / 1000000ULL);
     put_str(" MHz\n\n");
 
-    print_config(window_index, mode_index, op, passes_per_report);
+    print_config(window_index, op, passes_per_report);
 
     while (!stop) {
         bench_key key;
@@ -414,18 +381,17 @@ SYSV void bench_main(void) {
         uint64_t passes_done = 0;
 
         if (plat_poll_key(&key) &&
-            apply_key(key, &window_index, &mode_index, &op, &passes_per_report)) {
+            apply_key(key, &window_index, &op, &passes_per_report)) {
             break;
         }
 
         uint64_t run_window_index = window_index;
-        uint64_t run_mode_index = mode_index;
         uint64_t run_op = op;
         bench_window *w = &windows[run_window_index];
 
         uint64_t start_c = plat_read_counter();
         while (passes_done < passes_per_report) {
-            bytes += modes[run_mode_index].ops[run_op](w->start, w->end, BENCH_PATTERN);
+            bytes += ops[run_op](w->start, w->end, BENCH_PATTERN);
             passes_done++;
             if (plat_poll_key(&key)) {
                 pending_key = key;
@@ -446,7 +412,7 @@ SYSV void bench_main(void) {
         put_str(": ");
         put_window_name(w->gib_index);
         put_str(", ");
-        put_mode_label(run_mode_index, run_op);
+        put_mode_label(run_op);
         put_str(", ");
         put_u64(passes_done);
         put_str(" pass");
@@ -460,7 +426,7 @@ SYSV void bench_main(void) {
         put_str(" MiB/s\n");
 
         if (have_pending) {
-            stop = apply_key(pending_key, &window_index, &mode_index, &op, &passes_per_report);
+            stop = apply_key(pending_key, &window_index, &op, &passes_per_report);
         }
     }
 

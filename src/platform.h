@@ -12,7 +12,6 @@ typedef uint64_t size_t;
 #define BENCH_PATTERN 0xa5a5a5a55a5a5a5aULL
 #define GIB           (1024ULL * 1024ULL * 1024ULL)
 #define MIB           (1024ULL * 1024ULL)
-#define CACHE_LINE    64ULL
 
 #define MAX_WINDOWS 64
 
