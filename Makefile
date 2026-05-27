@@ -1,14 +1,19 @@
 CC = clang
 NASM = nasm
+OBJCOPY ?= llvm-objcopy
 BUILD_DIR ?= build
 DIST_DIR ?= dist
 SERIAL ?= 0
-BIOS_STAGE2_SECTORS ?= 48
+BIOS_STAGE2_SECTORS ?= 96
 
 EFI_APP := $(BUILD_DIR)/BOOTX64.EFI
 USB_APP := $(DIST_DIR)/EFI/BOOT/BOOTX64.EFI
 BIOS_BOOT := $(BUILD_DIR)/bios-boot.bin
 BIOS_ISO_BOOT := $(BUILD_DIR)/bios-isoboot.bin
+BIOS_STAGE2_OBJ := $(BUILD_DIR)/bios-stage2.o
+BIOS_MAIN_OBJ := $(BUILD_DIR)/bios_main.o
+BIOS_BENCH_OBJ := $(BUILD_DIR)/bios-bench.o
+BIOS_STAGE2_ELF := $(BUILD_DIR)/bios-stage2.elf
 BIOS_STAGE2 := $(BUILD_DIR)/bios-stage2.bin
 BIOS_STAGE2_PAD := $(BUILD_DIR)/bios-stage2.pad
 BIOS_IMG := $(BUILD_DIR)/efiram-bios.img
@@ -58,8 +63,10 @@ uefi-iso: $(UEFI_ISO)
 
 isos: bios-iso uefi-iso
 
-$(EFI_APP): src/efiram.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $< $(LDFLAGS) -o $@
+EFI_SRCS := src/efi_main.c src/bench.c
+
+$(EFI_APP): $(EFI_SRCS) src/platform.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(EFI_SRCS) $(LDFLAGS) -o $@
 
 $(BIOS_BOOT): bios/boot.asm | $(BUILD_DIR)
 	$(NASM) -DSTAGE2_SECTORS=$(BIOS_STAGE2_SECTORS) -f bin $< -o $@
@@ -67,8 +74,39 @@ $(BIOS_BOOT): bios/boot.asm | $(BUILD_DIR)
 $(BIOS_ISO_BOOT): bios/isoboot.asm | $(BUILD_DIR)
 	$(NASM) -f bin $< -o $@
 
-$(BIOS_STAGE2): bios/stage2.asm | $(BUILD_DIR)
-	$(NASM) -f bin $< -o $@
+BIOS_CFLAGS := \
+	--target=x86_64-elf \
+	-O2 \
+	-Wall \
+	-Wextra \
+	-ffreestanding \
+	-fno-builtin \
+	-fno-pic \
+	-fno-stack-protector \
+	-fno-asynchronous-unwind-tables \
+	-fno-unwind-tables \
+	-mno-red-zone \
+	-mno-sse \
+	-mno-mmx \
+	-mcmodel=large \
+	-c
+
+$(BIOS_STAGE2_OBJ): bios/stage2.asm | $(BUILD_DIR)
+	$(NASM) -f elf64 $< -o $@
+
+$(BIOS_MAIN_OBJ): src/bios_main.c src/platform.h | $(BUILD_DIR)
+	$(CC) $(BIOS_CFLAGS) $< -o $@
+
+$(BIOS_BENCH_OBJ): src/bench.c src/platform.h | $(BUILD_DIR)
+	$(CC) $(BIOS_CFLAGS) $< -o $@
+
+$(BIOS_STAGE2_ELF): $(BIOS_STAGE2_OBJ) $(BIOS_MAIN_OBJ) $(BIOS_BENCH_OBJ) bios/linker.ld | $(BUILD_DIR)
+	$(CC) --target=x86_64-elf -nostdlib -static -no-pie -fno-pic -fuse-ld=lld \
+		-Wl,-T,bios/linker.ld -Wl,--build-id=none -Wl,--no-pie \
+		$(BIOS_STAGE2_OBJ) $(BIOS_MAIN_OBJ) $(BIOS_BENCH_OBJ) -o $@
+
+$(BIOS_STAGE2): $(BIOS_STAGE2_ELF)
+	$(OBJCOPY) -O binary $< $@
 
 $(BIOS_STAGE2_PAD): $(BIOS_STAGE2)
 	test $$(stat -c %s $<) -le $$(( $(BIOS_STAGE2_SECTORS) * 512 ))

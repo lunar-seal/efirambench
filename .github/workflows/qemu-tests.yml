@@ -1,0 +1,51 @@
+name: QEMU tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  qemu:
+    name: QEMU boot test (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: BIOS
+            mode: bios
+            target: bios-iso
+          - name: UEFI
+            mode: uefi
+            target: uefi-iso
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Install qemu and OVMF
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf
+
+      - name: Build ISO
+        run: nix develop -c make ${{ matrix.target }}
+
+      - name: Run QEMU boot test
+        run: tests/qemu/run.sh ${{ matrix.mode }}
+
+      - name: Upload serial log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-${{ matrix.mode }}-serial
+          path: |
+            build/efiram-${{ matrix.mode }}.iso
+          if-no-files-found: warn
