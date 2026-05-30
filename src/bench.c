@@ -3,16 +3,16 @@
 #define MAX_PASSES_PER_REPORT (1ULL << 20)
 
 #define OP_WRITE 0
-#define OP_READ  1
+#define OP_READ 1
 #define OP_COUNT 2
 
-#define VIEW_WINDOW    0
+#define VIEW_WINDOW 0
 #define VIEW_HISTOGRAM 1
 
-#define WINDOW_SIZE_MIN     GIB
-#define WINDOW_SIZE_MAX     (MAX_WINDOWS * GIB)
+#define WINDOW_SIZE_MIN GIB
+#define WINDOW_SIZE_MAX (MAX_WINDOWS * GIB)
 #define WINDOW_SIZE_DEFAULT GIB
-#define HISTOGRAM_HEIGHT    10
+#define HISTOGRAM_HEIGHT 10
 
 static bench_window windows[MAX_WINDOWS];
 static uint64_t windows_count;
@@ -45,20 +45,28 @@ typedef struct {
 } histogram_sample;
 
 SYSV static void build_windows(void);
-SYSV static void build_windows_for_size(uint64_t size_bytes,
-                                        bench_window *out_windows,
-                                        uint64_t *out_count,
-                                        uint64_t *out_skipped_total,
+SYSV static void build_windows_for_size(uint64_t size_bytes, bench_window *out_windows,
+                                        uint64_t *out_count, uint64_t *out_skipped_total,
                                         uint64_t *out_skipped_leading,
                                         uint64_t *out_max_gib_scanned);
 SYSV static void print_window_summary(void);
 SYSV static void run_histogram(uint64_t op, uint64_t passes_per_window, uint64_t sweep);
 
-SYSV static uint64_t align_up(uint64_t v, uint64_t a)   { return (v + a - 1) & ~(a - 1); }
-SYSV static uint64_t align_down(uint64_t v, uint64_t a) { return v & ~(a - 1); }
-SYSV static uint64_t min_u64(uint64_t a, uint64_t b)    { return a < b ? a : b; }
-SYSV static uint64_t max_u64(uint64_t a, uint64_t b)    { return a > b ? a : b; }
-SYSV static uint64_t window_size_gib(void)              { return window_size_bytes / GIB; }
+SYSV static uint64_t align_up(uint64_t v, uint64_t a) {
+    return (v + a - 1) & ~(a - 1);
+}
+SYSV static uint64_t align_down(uint64_t v, uint64_t a) {
+    return v & ~(a - 1);
+}
+SYSV static uint64_t min_u64(uint64_t a, uint64_t b) {
+    return a < b ? a : b;
+}
+SYSV static uint64_t max_u64(uint64_t a, uint64_t b) {
+    return a > b ? a : b;
+}
+SYSV static uint64_t window_size_gib(void) {
+    return window_size_bytes / GIB;
+}
 
 SYSV static void put_str(const char *s) {
     while (*s) plat_put_char(*s++);
@@ -72,9 +80,12 @@ SYSV static void put_u64(uint64_t v) {
     char buf[21];
     int pos = 0;
 
-    if (v == 0) { plat_put_char('0'); return; }
+    if (v == 0) {
+        plat_put_char('0');
+        return;
+    }
     while (v > 0) {
-        buf[pos++] = (char)('0' + v % 10);
+        buf[pos++] = (char)('0' + (v % 10));
         v /= 10;
     }
     while (pos > 0) plat_put_char(buf[--pos]);
@@ -117,9 +128,7 @@ SYSV static inline void write_qwords(uint64_t address, uint64_t count, uint64_t 
 SYSV static inline uint64_t read_qwords(uint64_t address, uint64_t count) {
     const volatile uint64_t *p = (const volatile uint64_t *)address;
     uint64_t acc = 0;
-    for (uint64_t i = 0; i < count; i++) {
-        acc ^= p[i];
-    }
+    for (uint64_t i = 0; i < count; i++) { acc ^= p[i]; }
     return acc;
 }
 
@@ -134,7 +143,7 @@ SYSV static int sum_in_range_cb(uint64_t s, uint64_t e, void *ctx_) {
 }
 
 SYSV static uint64_t usable_bytes_in_range(uint64_t start, uint64_t end) {
-    range_sum_ctx ctx = { start, end, 0 };
+    range_sum_ctx ctx = {start, end, 0};
     plat_iter_usable_ranges(sum_in_range_cb, &ctx);
     return ctx.total;
 }
@@ -154,7 +163,7 @@ SYSV static int write_linear_cb(uint64_t s, uint64_t e, void *ctx_) {
 }
 
 SYSV static uint64_t write_window_linear(uint64_t start, uint64_t end, uint64_t pattern) {
-    write_linear_ctx ctx = { pattern, start, end, 0 };
+    write_linear_ctx ctx = {pattern, start, end, 0};
     plat_iter_usable_ranges(write_linear_cb, &ctx);
     __asm__ __volatile__("sfence" ::: "memory");
     return ctx.total;
@@ -183,7 +192,7 @@ SYSV static int read_linear_cb(uint64_t s, uint64_t e, void *ctx_) {
 
 SYSV static uint64_t read_window_linear(uint64_t start, uint64_t end, uint64_t pattern) {
     (void)pattern;
-    read_linear_ctx ctx = { start, end, 0, 0 };
+    read_linear_ctx ctx = {start, end, 0, 0};
     plat_iter_usable_ranges(read_linear_cb, &ctx);
     bench_read_sink ^= ctx.acc;
     return ctx.total;
@@ -211,13 +220,11 @@ SYSV static int max_end_cb(uint64_t s, uint64_t e, void *ctx_) {
     return 0;
 }
 
-SYSV static void build_windows_for_size(uint64_t size_bytes,
-                                        bench_window *out_windows,
-                                        uint64_t *out_count,
-                                        uint64_t *out_skipped_total,
+SYSV static void build_windows_for_size(uint64_t size_bytes, bench_window *out_windows,
+                                        uint64_t *out_count, uint64_t *out_skipped_total,
                                         uint64_t *out_skipped_leading,
                                         uint64_t *out_max_gib_scanned) {
-    max_end_ctx mctx = { 0 };
+    max_end_ctx mctx = {0};
     plat_iter_usable_ranges(max_end_cb, &mctx);
     uint64_t max_gib = mctx.scan_end / GIB;
     if (max_gib > MAX_WINDOWS) max_gib = MAX_WINDOWS;
@@ -264,8 +271,7 @@ SYSV static int try_resize_windows(uint64_t new_size_bytes, uint64_t *window_ind
     }
 
     *window_index = 0;
-    while (*window_index + 1 < windows_count &&
-           windows[*window_index].start < preferred_start) {
+    while (*window_index + 1 < windows_count && windows[*window_index].start < preferred_start) {
         (*window_index)++;
     }
     print_window_summary();
@@ -387,8 +393,8 @@ SYSV static void run_histogram(uint64_t op, uint64_t passes_per_window, uint64_t
         put_u64(row);
         put_str(" |");
         for (uint64_t i = 0; i < hist_count; i++) {
-            uint64_t height = (samples[i].mib_per_s * HISTOGRAM_HEIGHT + max_mib_per_s - 1) /
-                              max_mib_per_s;
+            uint64_t height =
+                (samples[i].mib_per_s * HISTOGRAM_HEIGHT + max_mib_per_s - 1) / max_mib_per_s;
             plat_put_char(height >= row ? '#' : ' ');
         }
         plat_put_char('\n');
@@ -444,14 +450,13 @@ SYSV static void print_histogram_config(uint64_t op, uint64_t passes_per_report)
 
 SYSV static void print_config(uint64_t view, uint64_t window_index, uint64_t op,
                               uint64_t passes_per_report) {
-    if (view == VIEW_HISTOGRAM) print_histogram_config(op, passes_per_report);
-    else print_window_config(window_index, op, passes_per_report);
+    if (view == VIEW_HISTOGRAM)
+        print_histogram_config(op, passes_per_report);
+    else
+        print_window_config(window_index, op, passes_per_report);
 }
 
-SYSV static int apply_key(bench_key key,
-                          uint64_t *view,
-                          uint64_t *window_index,
-                          uint64_t *op,
+SYSV static int apply_key(bench_key key, uint64_t *view, uint64_t *window_index, uint64_t *op,
                           uint64_t *passes_per_report) {
     uint32_t ch = key.unicode;
     int changed = 0;
@@ -459,19 +464,40 @@ SYSV static int apply_key(bench_key key,
     if (ch == 'q' || ch == 'Q' || ch == 0x1b) return 1;
 
     if (key.special == BENCH_KEY_UP) {
-        if (*window_index + 1 < windows_count) { (*window_index)++; changed = 1; }
+        if (*window_index + 1 < windows_count) {
+            (*window_index)++;
+            changed = 1;
+        }
     } else if (key.special == BENCH_KEY_DOWN) {
-        if (*window_index > 0) { (*window_index)--; changed = 1; }
+        if (*window_index > 0) {
+            (*window_index)--;
+            changed = 1;
+        }
     } else if (key.special == BENCH_KEY_HOME) {
-        if (windows_count > 0) { *window_index = 0; changed = 1; }
+        if (windows_count > 0) {
+            *window_index = 0;
+            changed = 1;
+        }
     } else if (key.special == BENCH_KEY_END) {
-        if (windows_count > 0) { *window_index = windows_count - 1; changed = 1; }
+        if (windows_count > 0) {
+            *window_index = windows_count - 1;
+            changed = 1;
+        }
     } else if (ch == ' ') {
-        if (windows_count > 0) { *window_index = (*window_index + 1) % windows_count; changed = 1; }
+        if (windows_count > 0) {
+            *window_index = (*window_index + 1) % windows_count;
+            changed = 1;
+        }
     } else if (ch == 'r' || ch == 'R') {
-        if (*op != OP_READ) { *op = OP_READ; changed = 1; }
+        if (*op != OP_READ) {
+            *op = OP_READ;
+            changed = 1;
+        }
     } else if (ch == 'w' || ch == 'W') {
-        if (*op != OP_WRITE) { *op = OP_WRITE; changed = 1; }
+        if (*op != OP_WRITE) {
+            *op = OP_WRITE;
+            changed = 1;
+        }
     } else if (ch == 'o' || ch == 'O') {
         *op = (*op == OP_WRITE) ? OP_READ : OP_WRITE;
         changed = 1;
@@ -479,9 +505,15 @@ SYSV static int apply_key(bench_key key,
         *view = (*view == VIEW_HISTOGRAM) ? VIEW_WINDOW : VIEW_HISTOGRAM;
         changed = 1;
     } else if (ch == '+' || ch == '=') {
-        if (*passes_per_report < MAX_PASSES_PER_REPORT) { *passes_per_report *= 2; changed = 1; }
+        if (*passes_per_report < MAX_PASSES_PER_REPORT) {
+            *passes_per_report *= 2;
+            changed = 1;
+        }
     } else if (ch == '-' || ch == '_') {
-        if (*passes_per_report > 1) { *passes_per_report /= 2; changed = 1; }
+        if (*passes_per_report > 1) {
+            *passes_per_report /= 2;
+            changed = 1;
+        }
     } else if (key.special == BENCH_KEY_RIGHT) {
         if (window_size_bytes + GIB <= WINDOW_SIZE_MAX) {
             changed = try_resize_windows(window_size_bytes + GIB, window_index);
@@ -535,8 +567,7 @@ SYSV void bench_main(void) {
         uint64_t bytes = 0;
         uint64_t passes_done = 0;
 
-        if (plat_poll_key(&key) &&
-            apply_key(key, &view, &window_index, &op, &passes_per_report)) {
+        if (plat_poll_key(&key) && apply_key(key, &view, &window_index, &op, &passes_per_report)) {
             break;
         }
 

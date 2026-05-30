@@ -89,7 +89,8 @@ typedef struct {
     VOID *RestoreTPL;
     VOID *AllocatePages;
     VOID *FreePages;
-    EFI_STATUS(EFIAPI *GetMemoryMap)(UINTN *, EFI_MEMORY_DESCRIPTOR *, UINTN *, UINTN *, uint32_t *);
+    EFI_STATUS(EFIAPI *GetMemoryMap)(UINTN *, EFI_MEMORY_DESCRIPTOR *, UINTN *, UINTN *,
+                                     uint32_t *);
     EFI_STATUS(EFIAPI *AllocatePool)(EFI_MEMORY_TYPE, UINTN, VOID **);
     EFI_STATUS(EFIAPI *FreePool)(VOID *);
     VOID *CreateEvent;
@@ -178,7 +179,9 @@ static void serial_put(char ch) {
 }
 #else
 static void serial_init(void) {}
-static void serial_put(char ch) { (void)ch; }
+static void serial_put(char ch) {
+    (void)ch;
+}
 #endif
 
 SYSV void plat_put_char(char ch) {
@@ -207,13 +210,14 @@ SYSV int plat_poll_key(bench_key *out) {
     out->unicode = k.UnicodeChar;
     out->special = BENCH_KEY_NONE;
     switch (k.ScanCode) {
-        case 0x01: out->special = BENCH_KEY_UP; break;
-        case 0x02: out->special = BENCH_KEY_DOWN; break;
-        case 0x03: out->special = BENCH_KEY_RIGHT; break;
-        case 0x04: out->special = BENCH_KEY_LEFT; break;
-        case 0x05: out->special = BENCH_KEY_HOME; break;
-        case 0x06: out->special = BENCH_KEY_END; break;
-        case 0x17: out->unicode = 0x1b; break;
+    case 0x01: out->special = BENCH_KEY_UP; break;
+    case 0x02: out->special = BENCH_KEY_DOWN; break;
+    case 0x03: out->special = BENCH_KEY_RIGHT; break;
+    case 0x04: out->special = BENCH_KEY_LEFT; break;
+    case 0x05: out->special = BENCH_KEY_HOME; break;
+    case 0x06: out->special = BENCH_KEY_END; break;
+    case 0x17: out->unicode = 0x1b; break;
+    default: break;
     }
     return 1;
 }
@@ -224,7 +228,9 @@ SYSV uint64_t plat_read_counter(void) {
     return ((uint64_t)hi << 32) | lo;
 }
 
-SYSV uint64_t plat_counter_per_sec(void) { return g_cps; }
+SYSV uint64_t plat_counter_per_sec(void) {
+    return g_cps;
+}
 
 SYSV void plat_iter_usable_ranges(plat_range_cb cb, void *ctx) {
     for (UINTN off = 0; off + sizeof(EFI_MEMORY_DESCRIPTOR) <= g_map_size; off += g_desc_size) {
@@ -251,7 +257,10 @@ static EFI_STATUS load_memory_map(void) {
     s = bs->AllocatePool(EfiLoaderData, sz, &buf);
     if (s & EFI_ERROR_MASK) return s;
     s = bs->GetMemoryMap(&sz, (EFI_MEMORY_DESCRIPTOR *)buf, &key, &ds, &dv);
-    if (s & EFI_ERROR_MASK) { bs->FreePool(buf); return s; }
+    if (s & EFI_ERROR_MASK) {
+        bs->FreePool(buf);
+        return s;
+    }
     g_map = (EFI_MEMORY_DESCRIPTOR *)buf;
     g_map_size = sz;
     g_desc_size = ds;

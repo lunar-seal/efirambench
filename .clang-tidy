@@ -1,0 +1,38 @@
+---
+# Freestanding x86_64 firmware code. No libc, no C++, no STL.
+# Disable anything that suggests modern C++ idioms or hosted-environment headers.
+Checks: >
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  misc-*,
+  portability-*,
+  readability-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-assignment-in-if-condition,
+  -bugprone-reserved-identifier,
+  -clang-analyzer-core.FixedAddressDereference,
+  -clang-analyzer-security.PointerSub,
+  -cert-dcl37-c,
+  -cert-dcl51-cpp,
+  -misc-include-cleaner,
+  -misc-no-recursion,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-function-cognitive-complexity,
+  -readability-else-after-return,
+  -readability-braces-around-statements,
+  -readability-isolate-declaration,
+  -readability-named-parameter
+
+WarningsAsErrors: '*'
+HeaderFilterRegex: '^src/.*\.h$'
+FormatStyle: file
+
+CheckOptions:
+  - key: readability-function-size.LineThreshold
+    value: '200'
+  - key: readability-function-size.StatementThreshold
+    value: '120'
+  - key: bugprone-suspicious-string-compare.WarnOnImplicitComparison
+    value: '0'

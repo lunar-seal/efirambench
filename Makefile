@@ -23,11 +23,23 @@ UEFI_ESP_IMG := $(BUILD_DIR)/efiram-uefi-esp.img
 UEFI_ISO := $(BUILD_DIR)/efiram-uefi.iso
 BIOS_ISO_BOOT_SECTORS := $$(($(BIOS_STAGE2_SECTORS) + 2))
 
+WARNFLAGS := \
+	-Wall \
+	-Wextra \
+	-Wpedantic \
+	-Wshadow \
+	-Wpointer-arith \
+	-Wstrict-prototypes \
+	-Wmissing-prototypes \
+	-Wundef \
+	-Wnull-dereference \
+	-Wfloat-equal \
+	-Werror
+
 CFLAGS := \
 	--target=x86_64-unknown-windows \
 	-O2 \
-	-Wall \
-	-Wextra \
+	$(WARNFLAGS) \
 	-ffreestanding \
 	-fno-builtin \
 	-fno-stack-protector \
@@ -51,7 +63,19 @@ LDFLAGS := \
 	-Wl,/timestamp:0 \
 	-Wl,/nodefaultlib
 
-.PHONY: all bios bios-iso clean isos uefi-iso usb-tree
+CLANG_TIDY ?= clang-tidy
+CLANG_FORMAT ?= clang-format
+
+C_SOURCES := src/bench.c src/efi_main.c src/bios_main.c
+C_HEADERS := src/platform.h
+TIDY_UEFI_SRCS := src/efi_main.c src/bench.c
+TIDY_BIOS_SRCS := src/bios_main.c src/bench.c
+
+# Drop -c for clang-tidy: it forwards flags to the driver but doesn't compile.
+# Use = (not :=) so BIOS_CFLAGS (defined later in the file) is fully expanded.
+BIOS_TIDY_FLAGS = $(filter-out -c,$(BIOS_CFLAGS))
+
+.PHONY: all bios bios-iso clean format format-check isos lint lint-bios lint-uefi uefi-iso usb-tree
 
 all: $(EFI_APP)
 
@@ -77,8 +101,7 @@ $(BIOS_ISO_BOOT): bios/isoboot.asm | $(BUILD_DIR)
 BIOS_CFLAGS := \
 	--target=x86_64-elf \
 	-O2 \
-	-Wall \
-	-Wextra \
+	$(WARNFLAGS) \
 	-ffreestanding \
 	-fno-builtin \
 	-fno-pic \
@@ -146,6 +169,20 @@ usb-tree: $(USB_APP)
 $(USB_APP): $(EFI_APP)
 	mkdir -p $(dir $@)
 	cp $< $@
+
+lint: lint-uefi lint-bios
+
+lint-uefi:
+	$(CLANG_TIDY) --quiet $(TIDY_UEFI_SRCS) -- $(CFLAGS)
+
+lint-bios:
+	$(CLANG_TIDY) --quiet $(TIDY_BIOS_SRCS) -- $(BIOS_TIDY_FLAGS)
+
+format:
+	$(CLANG_FORMAT) -i $(C_SOURCES) $(C_HEADERS)
+
+format-check:
+	$(CLANG_FORMAT) --dry-run --Werror $(C_SOURCES) $(C_HEADERS)
 
 clean:
 	rm -rf $(BUILD_DIR) $(DIST_DIR)
