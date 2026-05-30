@@ -1,6 +1,6 @@
 # EFIRAM
 
-Small **Vibecoded** x86_64 UEFI and BIOS (? i don't know what the correct term is, but something that is compatible with mainboards that don't support efi) application produced with GPT 5.5.
+Small **Vibecoded** x86_64 UEFI and BIOS (? i don't know what the correct term is, but something that is compatible with mainboards that don't support efi) application produced with GPT 5.5 and Claude Opus 4.7.
 I have not investigated the Code itself beyond skimming it. I would prefer handwritten code by someone who knows what they're doing in the future though (maybe even by myself).
 
 This measures firmware-time memory bandwidth across fully usable physical
