@@ -37,6 +37,7 @@ typedef struct {
 typedef int (*plat_range_cb)(uint64_t start, uint64_t end, void *ctx) SYSV;
 
 SYSV void plat_put_char(char ch);
+SYSV void plat_clear_screen(void);
 SYSV int plat_poll_key(bench_key *out);
 SYSV uint64_t plat_read_counter(void);
 SYSV uint64_t plat_counter_per_sec(void);

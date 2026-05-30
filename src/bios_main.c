@@ -59,6 +59,11 @@ SYSV void plat_put_char(char ch) {
     scroll_if_needed();
 }
 
+SYSV void plat_clear_screen(void) {
+    for (uint64_t i = 0; i < VGA_CELLS; i++) vga[i] = 0x0720;
+    cursor_pos = 0;
+}
+
 SYSV int plat_poll_key(bench_key *out) {
     out->special = BENCH_KEY_NONE;
     out->unicode = 0;

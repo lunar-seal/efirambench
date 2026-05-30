@@ -12,7 +12,8 @@
 #define WINDOW_SIZE_MIN GIB
 #define WINDOW_SIZE_MAX (MAX_WINDOWS * GIB)
 #define WINDOW_SIZE_DEFAULT GIB
-#define HISTOGRAM_HEIGHT 10
+#define MAX_HIST_BARS 16
+#define HIST_CHUNK_MAX_GIB MAX_WINDOWS
 
 static bench_window windows[MAX_WINDOWS];
 static uint64_t windows_count;
@@ -50,7 +51,8 @@ SYSV static void build_windows_for_size(uint64_t size_bytes, bench_window *out_w
                                         uint64_t *out_skipped_leading,
                                         uint64_t *out_max_gib_scanned);
 SYSV static void print_window_summary(void);
-SYSV static void run_histogram(uint64_t op, uint64_t passes_per_window, uint64_t sweep);
+SYSV static void run_histogram(uint64_t op, uint64_t passes_per_window, uint64_t sweep,
+                               uint64_t *hist_chunk_gib);
 
 SYSV static uint64_t align_up(uint64_t v, uint64_t a) {
     return (v + a - 1) & ~(a - 1);
@@ -284,9 +286,10 @@ SYSV static void build_windows(void) {
 }
 
 SYSV static void print_controls(void) {
-    put_str("Keys: up/down=prev/next window, left/right=-/+1 GiB size, ");
+    put_str("Keys: up/down=prev/next window, ");
+    put_str("left/right=window: -/+1 GiB size, histogram: halve/double chunk, ");
     put_str("home/end=first/last, space=next, r=read, w=write, o=toggle r/w, ");
-    put_str("h=toggle 1 GiB histogram loop, ");
+    put_str("h=toggle histogram loop, ");
     put_str("+/-=passes per print, q/esc=quit\n\n");
 }
 
@@ -327,7 +330,16 @@ SYSV static void print_window_summary(void) {
     }
 }
 
-SYSV static void run_histogram(uint64_t op, uint64_t passes_per_window, uint64_t sweep) {
+SYSV static uint64_t pick_hist_chunk_gib(uint64_t scan_gib) {
+    uint64_t chunk_gib = 1;
+    while (chunk_gib < MAX_WINDOWS && ((scan_gib + chunk_gib - 1) / chunk_gib) > MAX_HIST_BARS) {
+        chunk_gib *= 2;
+    }
+    return chunk_gib;
+}
+
+SYSV static void run_histogram(uint64_t op, uint64_t passes_per_window, uint64_t sweep,
+                               uint64_t *hist_chunk_gib) {
     bench_window hist_windows[MAX_WINDOWS];
     histogram_sample samples[MAX_WINDOWS];
     uint64_t hist_count = 0;
@@ -337,11 +349,25 @@ SYSV static void run_histogram(uint64_t op, uint64_t passes_per_window, uint64_t
     uint64_t max_mib_per_s = 0;
     uint64_t cps = plat_counter_per_sec();
 
-    build_windows_for_size(GIB, hist_windows, &hist_count, &hist_skipped_total,
+    if (*hist_chunk_gib == 0) {
+        max_end_ctx scan_ctx = {0};
+        plat_iter_usable_ranges(max_end_cb, &scan_ctx);
+        uint64_t scan_gib = scan_ctx.scan_end / GIB;
+        if (scan_gib > MAX_WINDOWS) scan_gib = MAX_WINDOWS;
+        *hist_chunk_gib = pick_hist_chunk_gib(scan_gib);
+    }
+    uint64_t chunk_gib = *hist_chunk_gib;
+    uint64_t chunk_bytes = chunk_gib * GIB;
+
+    plat_clear_screen();
+
+    build_windows_for_size(chunk_bytes, hist_windows, &hist_count, &hist_skipped_total,
                            &hist_skipped_leading, &hist_max_gib_scanned);
 
     if (hist_count == 0) {
-        put_str("Histogram sweep: no fully-usable 1 GiB chunks.\n");
+        put_str("Histogram sweep: no fully-usable ");
+        put_u64(chunk_gib);
+        put_str(" GiB chunks.\n");
         return;
     }
 
@@ -349,7 +375,9 @@ SYSV static void run_histogram(uint64_t op, uint64_t passes_per_window, uint64_t
     put_u64(sweep);
     put_str(": ");
     put_u64(hist_count);
-    put_str(" fully-usable 1 GiB chunk");
+    put_str(" fully-usable ");
+    put_u64(chunk_gib);
+    put_str(" GiB chunk");
     if (hist_count != 1) plat_put_char('s');
     put_str(" (");
     put_mode_label(op);
@@ -388,13 +416,14 @@ SYSV static void run_histogram(uint64_t op, uint64_t passes_per_window, uint64_t
     put_u64(max_mib_per_s);
     put_str(" MiB/s\n");
 
-    for (uint64_t row = HISTOGRAM_HEIGHT; row > 0; row--) {
+    uint64_t bar_height = hist_count;
+    for (uint64_t row = bar_height; row > 0; row--) {
         if (row < 10) plat_put_char(' ');
         put_u64(row);
         put_str(" |");
         for (uint64_t i = 0; i < hist_count; i++) {
             uint64_t height =
-                (samples[i].mib_per_s * HISTOGRAM_HEIGHT + max_mib_per_s - 1) / max_mib_per_s;
+                ((samples[i].mib_per_s * bar_height) + max_mib_per_s - 1) / max_mib_per_s;
             plat_put_char(height >= row ? '#' : ' ');
         }
         plat_put_char('\n');
@@ -438,8 +467,16 @@ SYSV static void print_window_config(uint64_t window_index, uint64_t op,
     plat_put_char('\n');
 }
 
-SYSV static void print_histogram_config(uint64_t op, uint64_t passes_per_report) {
-    put_str("Active view: histogram, chunk size: 1 GiB, mode: ");
+SYSV static void print_histogram_config(uint64_t op, uint64_t passes_per_report,
+                                        uint64_t hist_chunk_gib) {
+    put_str("Active view: histogram, chunk size: ");
+    if (hist_chunk_gib == 0)
+        put_str("auto");
+    else {
+        put_u64(hist_chunk_gib);
+        put_str(" GiB");
+    }
+    put_str(", mode: ");
     put_mode_label(op);
     put_str(", ");
     put_u64(passes_per_report);
@@ -449,15 +486,15 @@ SYSV static void print_histogram_config(uint64_t op, uint64_t passes_per_report)
 }
 
 SYSV static void print_config(uint64_t view, uint64_t window_index, uint64_t op,
-                              uint64_t passes_per_report) {
+                              uint64_t passes_per_report, uint64_t hist_chunk_gib) {
     if (view == VIEW_HISTOGRAM)
-        print_histogram_config(op, passes_per_report);
+        print_histogram_config(op, passes_per_report, hist_chunk_gib);
     else
         print_window_config(window_index, op, passes_per_report);
 }
 
 SYSV static int apply_key(bench_key key, uint64_t *view, uint64_t *window_index, uint64_t *op,
-                          uint64_t *passes_per_report) {
+                          uint64_t *passes_per_report, uint64_t *hist_chunk_gib) {
     uint32_t ch = key.unicode;
     int changed = 0;
 
@@ -515,16 +552,29 @@ SYSV static int apply_key(bench_key key, uint64_t *view, uint64_t *window_index,
             changed = 1;
         }
     } else if (key.special == BENCH_KEY_RIGHT) {
-        if (window_size_bytes + GIB <= WINDOW_SIZE_MAX) {
+        if (*view == VIEW_HISTOGRAM) {
+            if (*hist_chunk_gib < HIST_CHUNK_MAX_GIB) {
+                uint64_t next = *hist_chunk_gib ? *hist_chunk_gib * 2 : 2;
+                if (next > HIST_CHUNK_MAX_GIB) next = HIST_CHUNK_MAX_GIB;
+                *hist_chunk_gib = next;
+                changed = 1;
+            }
+        } else if (window_size_bytes + GIB <= WINDOW_SIZE_MAX) {
             changed = try_resize_windows(window_size_bytes + GIB, window_index);
         }
     } else if (key.special == BENCH_KEY_LEFT) {
-        if (window_size_bytes > WINDOW_SIZE_MIN) {
+        if (*view == VIEW_HISTOGRAM) {
+            if (*hist_chunk_gib > 1) {
+                *hist_chunk_gib /= 2;
+                if (*hist_chunk_gib == 0) *hist_chunk_gib = 1;
+                changed = 1;
+            }
+        } else if (window_size_bytes > WINDOW_SIZE_MIN) {
             changed = try_resize_windows(window_size_bytes - GIB, window_index);
         }
     }
 
-    if (changed) print_config(*view, *window_index, *op, *passes_per_report);
+    if (changed) print_config(*view, *window_index, *op, *passes_per_report, *hist_chunk_gib);
     return 0;
 }
 
@@ -535,6 +585,7 @@ SYSV void bench_main(void) {
     uint64_t passes_per_report = 1;
     uint64_t report = 1;
     uint64_t histogram_sweep = 1;
+    uint64_t hist_chunk_gib = 0;
     int stop = 0;
 
     put_str("\nEFIRAM memory bandwidth test\n");
@@ -558,7 +609,7 @@ SYSV void bench_main(void) {
     put_u64(cps / 1000000ULL);
     put_str(" MHz\n\n");
 
-    print_config(view, window_index, op, passes_per_report);
+    print_config(view, window_index, op, passes_per_report, hist_chunk_gib);
 
     while (!stop) {
         bench_key key;
@@ -567,14 +618,16 @@ SYSV void bench_main(void) {
         uint64_t bytes = 0;
         uint64_t passes_done = 0;
 
-        if (plat_poll_key(&key) && apply_key(key, &view, &window_index, &op, &passes_per_report)) {
+        if (plat_poll_key(&key) &&
+            apply_key(key, &view, &window_index, &op, &passes_per_report, &hist_chunk_gib)) {
             break;
         }
 
         if (view == VIEW_HISTOGRAM) {
-            run_histogram(op, passes_per_report, histogram_sweep++);
+            run_histogram(op, passes_per_report, histogram_sweep++, &hist_chunk_gib);
             if (plat_poll_key(&key)) {
-                stop = apply_key(key, &view, &window_index, &op, &passes_per_report);
+                stop =
+                    apply_key(key, &view, &window_index, &op, &passes_per_report, &hist_chunk_gib);
             }
             continue;
         }
@@ -620,7 +673,8 @@ SYSV void bench_main(void) {
         put_str(" MiB/s\n");
 
         if (have_pending) {
-            stop = apply_key(pending_key, &view, &window_index, &op, &passes_per_report);
+            stop = apply_key(pending_key, &view, &window_index, &op, &passes_per_report,
+                             &hist_chunk_gib);
         }
     }
 
