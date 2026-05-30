@@ -12,7 +12,7 @@
 #define WINDOW_SIZE_MIN GIB
 #define WINDOW_SIZE_MAX (MAX_WINDOWS * GIB)
 #define WINDOW_SIZE_DEFAULT GIB
-#define MAX_HIST_BARS 32
+#define MAX_HIST_BARS 16
 #define HIST_CHUNK_MAX_GIB MAX_WINDOWS
 
 static bench_window windows[MAX_WINDOWS];
