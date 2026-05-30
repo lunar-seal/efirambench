@@ -77,7 +77,7 @@ struct _EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL {
     VOID *QueryMode;
     VOID *SetMode;
     VOID *SetAttribute;
-    VOID *ClearScreen;
+    EFI_STATUS(EFIAPI *ClearScreen)(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *);
     VOID *SetCursorPosition;
     VOID *EnableCursor;
     VOID *Mode;
@@ -198,6 +198,12 @@ SYSV void plat_put_char(char ch) {
         out[1] = 0;
     }
     g_st->ConOut->OutputString(g_st->ConOut, out);
+}
+
+SYSV void plat_clear_screen(void) {
+    if (g_st && g_st->ConOut && g_st->ConOut->ClearScreen) {
+        g_st->ConOut->ClearScreen(g_st->ConOut);
+    }
 }
 
 SYSV int plat_poll_key(bench_key *out) {
